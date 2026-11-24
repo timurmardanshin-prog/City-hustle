@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="theme-color" content="#101820">
+<link rel="manifest" href="manifest.json">
+<title>City Hustle — Mobile</title>
+<style>
+:root{--glass:#101820c9;--line:#ffffff45}
+*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#111;color:#fff;font-family:system-ui,Arial;touch-action:none}
+canvas{display:block;width:100%;height:100%}
+#hud{position:fixed;top:env(safe-area-inset-top,10px);left:12px;z-index:4;padding:10px 12px;background:var(--glass);border:1px solid var(--line);border-radius:14px;font-size:13px;line-height:1.55;text-shadow:0 1px 3px #000}
+#title{font-weight:900;letter-spacing:1.5px;font-size:15px;color:#ffca58}
+#mission{position:fixed;top:12px;left:50%;transform:translateX(-50%);z-index:4;background:var(--glass);border:1px solid var(--line);padding:8px 13px;border-radius:14px;font-size:12px;white-space:nowrap}
+#controls{position:fixed;inset:0;z-index:5;pointer-events:none}
+#stick{position:absolute;left:20px;bottom:calc(20px + env(safe-area-inset-bottom));width:126px;height:126px;border-radius:50%;border:2px solid #ffffff55;background:#07111b55;pointer-events:auto}
+#knob{position:absolute;left:37px;top:37px;width:48px;height:48px;border-radius:50%;background:#ffffffa8;box-shadow:0 2px 10px #0008}
+#actions{position:absolute;right:14px;bottom:calc(17px + env(safe-area-inset-bottom));display:grid;grid-template-columns:repeat(2,68px);gap:9px;pointer-events:auto}
+.btn{width:68px;height:58px;border:1px solid #ffffff66;border-radius:17px;background:#101820d9;color:#fff;font-weight:800;font-size:11px;box-shadow:0 4px 12px #0006;touch-action:none}
+.btn:active{background:#e0a83a;color:#171717}
+#hint{position:fixed;bottom:calc(160px + env(safe-area-inset-bottom));left:50%;transform:translateX(-50%);background:#101820c9;padding:8px 12px;border-radius:12px;font-size:11px;white-space:nowrap;pointer-events:none}
+#start,#dead{position:fixed;inset:0;z-index:10;background:linear-gradient(#07111acc,#07111af2);display:flex;align-items:center;justify-content:center;flex-direction:column;text-align:center;padding:24px}
+#dead{display:none;background:#12090de8}
+.panel{max-width:390px;width:100%;padding:26px 20px;border:1px solid #ffffff38;border-radius:24px;background:#14212be8;box-shadow:0 20px 70px #0009}
+h1{margin:0 0 6px;font-size:32px;letter-spacing:2px;color:#ffca58}
+p{color:#cbd5dc;font-size:14px;line-height:1.5}
+.big{border:0;border-radius:14px;background:#ffca58;color:#17212a;padding:15px 28px;font-size:16px;font-weight:900;width:100%;margin-top:10px}
+.small{font-size:11px;color:#91a1ac}
+</style>
+</head>
+<body>
+<div id="hud"><div id="title">CITY HUSTLE</div><div id="health">Здоровье: 100</div><div id="cash">Деньги: $0</div><div id="wanted">Розыск: ☆☆☆☆☆</div><div id="carLabel">Пешком</div></div>
+<div id="mission">Задание: собери 5 золотых жетонов</div>
+<div id="hint">Левый джойстик — движение · правая часть — камера</div>
+<div id="controls">
+ <div id="stick"><div id="knob"></div></div>
+ <div id="actions">
+  <button class="btn" id="run">БЕГ</button><button class="btn" id="jump">ПРЫЖОК</button>
+  <button class="btn" id="use">СЕСТЬ / ВЗЯТЬ</button><button class="btn" id="exit">ВЫЙТИ</button>
+  <button class="btn" id="gas">ГАЗ</button><button class="btn" id="brake">ТОРМОЗ</button>
+ </div>
+</div>
+<div id="start"><div class="panel"><h1>CITY HUSTLE</h1><p>Небольшой открытый 3D-город для смартфона. Исследуй улицы, собирай жетоны и прокатись на машинах.</p><p class="small">Поверни телефон горизонтально для удобной игры.</p><button class="big" id="play">НАЧАТЬ ИГРУ</button></div></div>
+<div id="dead"><div class="panel"><h1>ТЫ ПОПАЛСЯ</h1><p>Полиция остановила тебя. Попробуй ещё раз!</p><button class="big" id="again">ВОЗРОДИТЬСЯ</button></div></div>
+<script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
+<script>
+
+if(!window.THREE){document.getElementById('play').disabled=true;document.getElementById('play').textContent='НЕТ ПОДКЛЮЧЕНИЯ';document.querySelector('#start .small').textContent='Для загрузки 3D-движка нужен интернет. Открой файл после подключения к сети.';throw new Error('Three.js не загрузился');}
+const scene=new THREE.Scene(); scene.background=new THREE.Color(0x91b9cb); scene.fog=new THREE.Fog(0x91b9cb,75,220);
+const camera=new THREE.PerspectiveCamera(65,innerWidth/innerHeight,.1,350);
+const renderer=new THREE.WebGLRenderer({antialias:false,powerPreference:'high-performance'});
+renderer.setPixelRatio(Math.min(devicePixelRatio,1.5));renderer.setSize(innerWidth,innerHeight);renderer.outputColorSpace=THREE.SRGBColorSpace;document.body.appendChild(renderer.domElement);
+scene.add(new THREE.HemisphereLight(0xe7f5ff,0x53604a,2.1));
+const sun=new THREE.DirectionalLight(0xffe2b2,2.2);sun.position.set(-45,90,30);scene.add(sun);
+const mat=c=>new THREE.MeshLambertMaterial({color:c});
+const ground=mat(0x648b59),asphalt=mat(0x343a40),sidewalk=mat(0xa5a39b),white=mat(0xe5dfca);
+function box(x,y,z,w,h,d,m,parent=scene){const o=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),m);o.position.set(x,y,z);parent.add(o);return o;}
+box(0,-.35,0,220,.6,220,ground);
+for(let i=-90;i<=90;i+=30){
+ box(i,0,0,9,.12,220,asphalt);box(0,0,i,220,.12,9,asphalt);
+ box(i+5,0,0,1.1,.13,220,sidewalk);box(0,0,i+5,220,.13,1.1,sidewalk);
+ for(let k=-100;k<=100;k+=12){box(i,.075,k, .18,.025,4,white);box(k,.075,i,4,.025,.18,white);}
+}
+const buildingMats=[0xb4a99a,0x8999a5,0xc4b89e,0x777f88,0xd0c6b5,0x9a8c82].map(mat);
+const solids=[];
+for(let x=-90;x<=90;x+=30)for(let z=-90;z<=90;z+=30)for(const a of [-1,1])for(const b of [-1,1]){
+ const w=7+Math.random()*4,d=7+Math.random()*4,h=9+Math.random()*30,bx=x+a*(8+Math.random()*2),bz=z+b*(8+Math.random()*2);
+ const building=box(bx,h/2,bz,w,h,d,buildingMats[Math.floor(Math.random()*buildingMats.length)]);
+ solids.push({x:bx,z:bz,w,d});
+ // roof block and simple lit windows
+ box(bx,h+.25,bz,w*.35,.5,d*.35,mat(0x555b62));
+ for(let yy=3;yy<h-2;yy+=4)for(let xx=-w/2+1;xx<w/2-1;xx+=2.5){
+  box(bx+xx,yy,bz+d/2+.02,.9,1.25,.05,mat(Math.random()>.5?0x354d5c:0x9b9b78));
+ }
+}
+for(let i=0;i<65;i++){const x=Math.random()*190-95,z=Math.random()*190-95;box(x,1,z,.65,2,.65,mat(0x67472b));const t=new THREE.Mesh(new THREE.ConeGeometry(2.3,4.8,6),mat(0x27683a));t.position.set(x,4,z);scene.add(t);}
+function makePerson(){
+ const g=new THREE.Group();const torso=new THREE.Mesh(new THREE.CapsuleGeometry(.38,.85,4,7),mat(0x2359a5));torso.position.y=1.15;g.add(torso);
+ const head=new THREE.Mesh(new THREE.SphereGeometry(.29,10,8),mat(0xd9a77d));head.position.y=2;g.add(head);
+ const legmat=mat(0x242b35);for(const x of [-.17,.17]){const l=new THREE.Mesh(new THREE.BoxGeometry(.19,.65,.22),legmat);l.position.set(x,.35,0);g.add(l);}
+ return g;
+}
+const player=makePerson();scene.add(player);player.position.set(0,0,0);
+const cars=[];
+function makeCar(x,z,color,name,police=false){
+ const g=new THREE.Group();box(0,.65,0,2,0.75,4,mat(color),g);box(0,1.25,-.25,1.55,.75,2.05,mat(0x293c4b),g);
+ for(const a of [-1,1])for(const b of [-1,1]){const wh=new THREE.Mesh(new THREE.CylinderGeometry(.38,.38,.26,10),mat(0x101317));wh.rotation.z=Math.PI/2;wh.position.set(a*1,.38,b*1.35);g.add(wh);}
+ if(police){box(-.48,1.72,-.2,.38,.16,.3,mat(0x287bff),g);box(.48,1.72,-.2,.38,.16,.3,mat(0xe33c3c),g);}
+ g.position.set(x,0,z);scene.add(g);const c={mesh:g,name,speed:0,police};cars.push(c);return c;
+}
+makeCar(8,5,0xb63832,'Седан');makeCar(-12,9,0x2366a8,'Купе');makeCar(20,-10,0xaaa69a,'Внедорожник');const cop=makeCar(-25,-18,0x20252c,'Патруль',true);
+const tokens=[];for(let i=0;i<18;i++){const t=new THREE.Mesh(new THREE.TorusGeometry(.55,.16,7,14),mat(0xffc52e));t.position.set(Math.random()*170-85,1.2,Math.random()*170-85);scene.add(t);tokens.push(t);}
+let joyX=0,joyY=0,run=false,gas=false,brake=false,car=null,angle=0,health=100,money=0,wanted=0,tokenCount=0,jumpV=0,playing=false;
+const $=id=>document.getElementById(id);
+function hud(){$('health').textContent='Здоровье: '+health;$('cash').textContent='Деньги: $'+money;$('wanted').textContent='Розыск: '+'★'.repeat(wanted)+'☆'.repeat(5-wanted);$('carLabel').textContent=car?car.name:'Пешком';$('mission').textContent=tokenCount>=5?'Задание выполнено! Найди ещё жетоны':'Задание: собери 5 золотых жетонов ('+tokenCount+'/5)';}
+const stick=$('stick'),knob=$('knob');let stickPointer=null;
+stick.addEventListener('pointerdown',e=>{stickPointer=e.pointerId;stick.setPointerCapture(e.pointerId);stickMove(e);});
+stick.addEventListener('pointermove',e=>{if(e.pointerId===stickPointer)stickMove(e);});
+function stickMove(e){const r=stick.getBoundingClientRect();let x=e.clientX-r.left-r.width/2,y=e.clientY-r.top-r.height/2,l=Math.hypot(x,y),m=43;if(l>m){x=x/l*m;y=y/l*m;}joyX=x/m;joyY=y/m;knob.style.left=37+x+'px';knob.style.top=37+y+'px';}
+function resetStick(){stickPointer=null;joyX=joyY=0;knob.style.left='37px';knob.style.top='37px';}
+stick.addEventListener('pointerup',resetStick);stick.addEventListener('pointercancel',resetStick);
+function hold(id,fn){const el=$(id);el.addEventListener('pointerdown',e=>{e.preventDefault();fn(true)});['pointerup','pointercancel','pointerleave'].forEach(ev=>el.addEventListener(ev,()=>fn(false)));}
+hold('run',v=>run=v);hold('gas',v=>gas=v);hold('brake',v=>brake=v);
+let jumpQueued=false;$('jump').onclick=()=>jumpQueued=true;
+$('use').onclick=()=>{if(car)return;let best=null,dist=5;for(const c of cars){const d=c.mesh.position.distanceTo(player.position);if(d<dist){best=c;dist=d;}}if(best){car=best;player.visible=false;hud();}};
+$('exit').onclick=()=>{if(car){player.position.copy(car.mesh.position);player.position.x+=2.7;player.visible=true;car.speed=0;car=null;hud();}};
+let rightPointer=null,lastX=0;
+renderer.domElement.addEventListener('pointerdown',e=>{if(e.clientX>innerWidth*.42){rightPointer=e.pointerId;lastX=e.clientX;}});
+renderer.domElement.addEventListener('pointermove',e=>{if(e.pointerId===rightPointer){angle+=(e.clientX-lastX)*.006;lastX=e.clientX;}});
+renderer.domElement.addEventListener('pointerup',e=>{if(e.pointerId===rightPointer)rightPointer=null;});
+const keys={};addEventListener('keydown',e=>keys[e.key.toLowerCase()]=true);addEventListener('keyup',e=>keys[e.key.toLowerCase()]=false);
+function collide(p){for(const s of solids){if(Math.abs(p.x-s.x)<s.w/2+0.65&&Math.abs(p.z-s.z)<s.d/2+0.65)return true;}return false;}
+function respawn(){health=100;wanted=0;car=null;player.visible=true;player.position.set(0,0,0);cop.mesh.position.set(-25,-18,0);cop.speed=0;$('dead').style.display='none';hud();}
+$('again').onclick=respawn;
+$('play').onclick=()=>{$('start').style.display='none';playing=true;};
+let prev=performance.now();
+function frame(now){requestAnimationFrame(frame);const dt=Math.min((now-prev)/1000,.04);prev=now;
+ if(playing){
+  if(!car){const f=joyY+(keys.w?-1:0)+(keys.s?1:0),r=joyX+(keys.d?1:0)-(keys.a?1:0),spd=run?12:7;const dx=(Math.sin(angle)*f+Math.cos(angle)*r)*spd*dt,dz=(Math.cos(angle)*f-Math.sin(angle)*r)*spd*dt;const nx=player.position.x+dx,nz=player.position.z+dz;if(!collide({x:nx,z:player.position.z}))player.position.x=nx;if(!collide({x:player.position.x,z:nz}))player.position.z=nz;if(Math.abs(f)+Math.abs(r)>.1)player.rotation.y=Math.atan2(r,f)+angle;
+   if(jumpQueued&&player.position.y===0)jumpV=7;jumpQueued=false;player.position.y+=jumpV*dt;jumpV-=19*dt;if(player.position.y<0){player.position.y=0;jumpV=0;}
+  }else{if(gas||keys.w)car.speed+=13*dt;if(brake||keys.s)car.speed-=18*dt;car.speed*=.985;car.speed=THREE.MathUtils.clamp(car.speed,-9,25);car.mesh.rotation.y+=joyX*dt*1.6;car.mesh.position.x+=Math.sin(car.mesh.rotation.y)*car.speed*dt;car.mesh.position.z+=Math.cos(car.mesh.rotation.y)*car.speed*dt;player.position.copy(car.mesh.position);}
+  const pos=car?car.mesh.position:player.position;
+  for(const t of tokens){if(t.visible&&t.position.distanceTo(pos)<2){t.visible=false;money+=100;tokenCount++;hud();}}
+  for(const t of tokens)if(t.visible)t.rotation.y+=dt*2;
+  // Police chase when wanted
+  if(wanted>0){const p=cop.mesh.position,dx=pos.x-p.x,dz=pos.z-p.z,len=Math.hypot(dx,dz)||1;p.x+=dx/len*dt*(3+wanted);p.z+=dz/len*dt*(3+wanted);cop.mesh.rotation.y=Math.atan2(dx,dz);if(len<3){health-=dt*9;if(health<=0){health=0;playing=false;$('dead').style.display='flex';}hud();}}
+  const target=pos;const dist=car?10:7;camera.position.set(target.x-Math.sin(angle)*dist,target.y+5,target.z-Math.cos(angle)*dist);camera.lookAt(target.x,target.y+1,target.z);
+  pos.x=THREE.MathUtils.clamp(pos.x,-103,103);pos.z=THREE.MathUtils.clamp(pos.z,-103,103);
+ }
+ renderer.render(scene,camera);
+}
+requestAnimationFrame(frame);hud();
+addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight);});
+if('serviceWorker' in navigator && location.protocol.startsWith('http'))navigator.serviceWorker.register('./sw.js').catch(()=>{});
+</script>
+</body></html>
